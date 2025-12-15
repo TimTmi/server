@@ -1,6 +1,7 @@
 // server.js
 const admin = require("firebase-admin");
 const mqtt = require("mqtt");
+const nodemailer = require("nodemailer");
 
 // --------------------
 // Firestore setup
@@ -11,6 +12,20 @@ admin.initializeApp({
   ),
 });
 const db = admin.firestore();
+
+// --------------------
+// Email setup (hardcoded for now)
+// --------------------
+const EMAIL_USER = "your_email@gmail.com";
+const EMAIL_PASS = "your_app_password";
+
+const mailer = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: EMAIL_USER,
+    pass: EMAIL_PASS,
+  },
+});
 
 // --------------------
 // MQTT setup
@@ -67,15 +82,25 @@ client.on("message", async (topic, message) => {
       case "portion":
         updateData = { lastPortion: parseFloat(payload) };
         break;
-      case "weight":
-        updateData = { currentWeight: parseFloat(payload) };
+        
+      case "weight": {
+        const weight = parseFloat(payload);
+        updateData = { currentWeight: weight };
+
+        if (weight <= 20.0) {
+          await notifyUser(
+            feederId,
+            "Low Food Alert",
+            "Your feeder is running low on food. Please refill it.",
+            "lowFoodAlerts"
+          );
+        }
         break;
+      }
+
       case "fed": {
         const portionSize = parseFloat(payload);
-        if (isNaN(portionSize)) {
-          console.warn(`Invalid fed payload for feeder ${feederId}:`, payload);
-          return;
-        }
+        if (isNaN(portionSize)) return;
 
         await feederRef.collection("feedingLogs").add({
           portionSize,
@@ -83,9 +108,16 @@ client.on("message", async (topic, message) => {
           source: "device",
         });
 
-        console.log(`Feeding log added for feeder ${feederId}: ${portionSize}`);
+        await notifyUser(
+          feederId,
+          "Pet Feeding Completed",
+          `Your pet was fed ${portionSize} grams.`,
+          "feedingReminders"
+        );
+
         return;
       }
+
       case "cmd":
         return; // ignore outgoing commands
       default:
@@ -144,6 +176,31 @@ async function checkAndSendFeedingCommands() {
   } catch (err) {
     console.error("Error checking feeding schedules:", err);
   }
+}
+
+// --------------------
+// Notify helper function
+// --------------------
+async function notifyUser(feederId, subject, text, settingsKey) {
+  const snapshot = await db
+    .collection("users")
+    .where("feederId", "==", feederId)
+    .limit(1)
+    .get();
+
+  if (snapshot.empty) return;
+
+  const user = snapshot.docs[0].data();
+  if (!user.settings?.[settingsKey]) return;
+
+  await mailer.sendMail({
+    from: EMAIL_USER,
+    to: user.email,
+    subject,
+    text,
+  });
+
+  console.log(`Email sent to ${user.email}: ${subject}`);
 }
 
 // Start the interval loop
