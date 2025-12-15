@@ -1,0 +1,5 @@
+node_modules/
+.env
+*.log
+serviceAccountKey.json
+studio-1400358527-eb8e5-firebase-adminsdk-fbsvc-2285702e52.json
