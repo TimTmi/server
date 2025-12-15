@@ -16,8 +16,8 @@ const db = admin.firestore();
 // --------------------
 // Email setup (hardcoded for now)
 // --------------------
-const EMAIL_USER = "your_email@gmail.com";
-const EMAIL_PASS = "your_app_password";
+const EMAIL_USER = "nkhao23@clc.fitus.edu.vn";
+const EMAIL_PASS = "krbmhidbkueqohjq";
 
 const mailer = nodemailer.createTransport({
   service: "gmail",
@@ -82,7 +82,7 @@ client.on("message", async (topic, message) => {
       case "portion":
         updateData = { lastPortion: parseFloat(payload) };
         break;
-        
+
       case "weight": {
         const weight = parseFloat(payload);
         updateData = { currentWeight: weight };
@@ -98,7 +98,7 @@ client.on("message", async (topic, message) => {
         break;
       }
 
-      case "fed": {
+      case "feed_completed": {
         const portionSize = parseFloat(payload);
         if (isNaN(portionSize)) return;
 
@@ -115,6 +115,29 @@ client.on("message", async (topic, message) => {
           "feedingReminders"
         );
 
+        return;
+      }
+
+      case "feed_failed": {
+        const portionSize = parseFloat(payload) || 0;
+
+        await feederRef.collection("feedingLogs").add({
+          portionSize,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          source: "device",
+          status: "failed",
+        });
+
+        await notifyUser(
+          feederId,
+          "Pet Feeding Failed",
+          `A scheduled feeding of ${portionSize} grams could not be completed. Please check your feeder.`,
+          "feedingReminders"
+        );
+
+        console.log(
+          `Feeding failure logged for feeder ${feederId}: ${portionSize}`
+        );
         return;
       }
 
@@ -185,22 +208,26 @@ async function notifyUser(feederId, subject, text, settingsKey) {
   const snapshot = await db
     .collection("users")
     .where("feederId", "==", feederId)
-    .limit(1)
     .get();
 
   if (snapshot.empty) return;
 
-  const user = snapshot.docs[0].data();
-  if (!user.settings?.[settingsKey]) return;
+  for (const doc of snapshot.docs) {
+    const user = doc.data();
+    if (!user.settings?.[settingsKey]) continue;
 
-  await mailer.sendMail({
-    from: EMAIL_USER,
-    to: user.email,
-    subject,
-    text,
-  });
-
-  console.log(`Email sent to ${user.email}: ${subject}`);
+    try {
+      await mailer.sendMail({
+        from: EMAIL_USER,
+        to: user.email,
+        subject,
+        text,
+      });
+      console.log(`Email sent to ${user.email}: ${subject}`);
+    } catch (err) {
+      console.error(`Failed to send email to ${user.email}:`, err);
+    }
+  }
 }
 
 // Start the interval loop
