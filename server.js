@@ -178,9 +178,11 @@ async function checkAndSendFeedingCommands() {
       const scheduleData = doc.data();
 
       // Example command: send portion size
-      const commandPayload = JSON.stringify({
-        portion: scheduleData.portionSize,
-      });
+      // const commandPayload = JSON.stringify({
+      //   portion: scheduleData.portionSize,
+      // });
+
+      const commandPayload = "feed";
 
       client.publish(`autofeeder/${feederId}/cmd`, commandPayload, (err) => {
         if (err) {
