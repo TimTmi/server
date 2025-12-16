@@ -6,11 +6,14 @@ const nodemailer = require("nodemailer");
 // --------------------
 // Firestore setup
 // --------------------
+
 admin.initializeApp({
   credential: admin.credential.cert(
     require("./studio-1400358527-eb8e5-firebase-adminsdk-fbsvc-2285702e52.json")
   ),
 });
+// admin.initializeApp();
+
 const db = admin.firestore();
 
 // --------------------
@@ -85,16 +88,34 @@ client.on("message", async (topic, message) => {
 
       case "weight": {
         const weight = parseFloat(payload);
+        if (isNaN(weight)) return;
         updateData = { currentWeight: weight };
+        break;
+      }
 
-        if (weight <= 20.0) {
-          await notifyUser(
-            feederId,
-            "Low Food Alert",
-            "Your feeder is running low on food. Please refill it.",
-            "lowFoodAlerts"
-          );
-        }
+      case "storage_low": {
+        updateData = { storageState: "LOW" };
+
+        await notifyUser(
+          feederId,
+          "Low Food Alert",
+          "Your feeder is running low on food. Please refill it soon.",
+          "lowFoodAlerts"
+        );
+
+        break;
+      }
+
+      case "storage_empty": {
+        updateData = { storageState: "EMPTY" };
+
+        await notifyUser(
+          feederId,
+          "Food Empty Alert",
+          "Your feeder is out of food. Feeding cannot continue until it is refilled.",
+          "lowFoodAlerts"
+        );
+
         break;
       }
 
@@ -106,6 +127,7 @@ client.on("message", async (topic, message) => {
           portionSize,
           timestamp: admin.firestore.FieldValue.serverTimestamp(),
           source: "device",
+          status: "completed",
         });
 
         await notifyUser(
@@ -138,6 +160,58 @@ client.on("message", async (topic, message) => {
         console.log(
           `Feeding failure logged for feeder ${feederId}: ${portionSize}`
         );
+        return;
+      }
+
+      case "feed_skipped":
+      case "feed_rejected_no_portion":
+      case "feed_rejected_empty_storage":
+      case "feed_rejected_busy": {
+        const portionSize = parseFloat(payload);
+        if (isNaN(portionSize)) return;
+
+        let status;
+        let message;
+
+        switch (metric) {
+          case "feed_skipped":
+            status = "skipped";
+            message = `A feeding of ${portionSize} grams was skipped.`;
+            break;
+
+          case "feed_rejected_no_portion":
+            status = "rejected_no_portion";
+            message = `Feeding rejected: no portion specified (${portionSize} g).`;
+            break;
+
+          case "feed_rejected_empty_storage":
+            status = "rejected_empty_storage";
+            message = `Feeding rejected: storage is empty (${portionSize} g requested).`;
+            break;
+
+          case "feed_rejected_busy":
+            status = "rejected_busy";
+            message = `Feeding rejected: feeder was busy (${portionSize} g requested).`;
+            break;
+        }
+
+        await feederRef.collection("feedingLogs").add({
+          portionSize,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          source: "device",
+          status,
+        });
+
+        // Optional: notify user (you can gate this later per status)
+        await notifyUser(
+          feederId,
+          "Pet Feeding Issue",
+          message,
+          "feedingReminders"
+        );
+
+        console.log(`Feeding ${status} for feeder ${feederId}: ${portionSize}`);
+
         return;
       }
 
