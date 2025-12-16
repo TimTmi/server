@@ -157,7 +157,7 @@ client.on("message", async (topic, message) => {
 // --------------------
 // Scheduled Feeder Commands
 // --------------------
-const CHECK_INTERVAL = 10000; // 10 seconds, adjust as needed
+const CHECK_INTERVAL = 10000; // every 10 seconds, adjust as needed
 
 async function checkAndSendFeedingCommands() {
   const now = new Date();
