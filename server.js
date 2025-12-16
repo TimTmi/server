@@ -256,8 +256,8 @@ async function checkAndSendFeedingCommands() {
       //   portion: scheduleData.portionSize,
       // });
 
-      const commandPayload = "feed";
-
+      const commandPayload = "feed"; //feed command
+      //publish the command to mqtt
       client.publish(`autofeeder/${feederId}/cmd`, commandPayload, (err) => {
         if (err) {
           console.error(`Failed to publish cmd for feeder ${feederId}:`, err);
